@@ -6,7 +6,7 @@
 > [**tus**](https://tus.io/) is a protocol based on HTTP for *resumable file uploads*. Resumable
 > means that an upload can be interrupted at any moment and can be resumed without
 > re-uploading the previous data again. An interruption may happen willingly, if
-> the user wants to pause, or by accident in case of an network issue or server
+> the user wants to pause, or by accident in case of a network issue or server
 > outage.
 
 `tus-shell-client` is a pure shell client implementation for the tus resumable upload protocol.
@@ -30,7 +30,7 @@ Options:
   -p N              N parallel uploads.
                     > default: 1
   -H HEADER         Set additional header.
-  -r                Reuploads given file from beginning.
+  -r                Reuploads given file from the beginning.
   -h                Shows usage.
 
 ➤ https://tus.io/protocols/resumable-upload.html
@@ -39,19 +39,15 @@ Options:
 ```
 
 ## Environment variables
-You can following options as environmnet variables.
+You can set options as environment variables.
 - `TUSD` _(Option: `-t`)_
-- `TUS_HEADERS` Seperate headers with `,` _(Option: `-H`)_
+- `TUS_HEADERS` Separate headers with `,` _(Option: `-H`)_
 ```sh
 export TUS_HEADERS="Authorization: token,Other-Header: value"
 ```
-**equels:** `-H "Authorization: token" -H "Other-Header: value"`.
+**equals:** `-H "Authorization: token" -H "Other-Header: value"`.
 - `TUS_CHUNCK_SIZE` in MegaBytes _(Option: `-c`)_
 - `TUS_PARALLEL` _(Option: `-p`)_
-
-## DONE
-- [x] `Creation`
-- [x] Implemented `Upload-Concat` but not tested.
 
 ## TODOS `Tus-Extension`
 - [ ] `Upload-Defer-Length`

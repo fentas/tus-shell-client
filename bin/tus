@@ -37,7 +37,7 @@ Options:
   -p N              N parallel uploads.
                     > default: 1
   -H HEADER         Set additional header.
-  -r                Reuploads given file from beginning.
+  -r                Reuploads given file from the beginning.
   -h                Shows usage.
 
 EOTXT
