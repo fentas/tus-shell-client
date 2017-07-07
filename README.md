@@ -1,5 +1,6 @@
-# tus-shell-client
 <img alt="Tus logo" src="https://github.com/fentas/tus-shell-client/blob/master/tus-shell-client.png?raw=true" width="30%" align="right" />
+
+# tus-shell-client
 
 > A pure shell client for the tus resumable upload protocol.
 
