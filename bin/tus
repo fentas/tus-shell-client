@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 : {TUSD:=''}
 : {TUS_HEADERS:=''}
@@ -277,8 +278,7 @@ SIZE="$(wc -c <"${FILE}")"
 declare -A Location
 [ -f "${FILE}.tus" ] \
   && . <(cat "${FILE}.tus" | grep -E '^(TUSD|TUS_HEADERS|TUS_CHUNCK_SIZE|TUS_PARALLEL|Location)')
-# [ "${TUS_PARALLEL}" -gt 1 ] \
-#   && TUS_HEADERS+=("Tus-Extension: concatenation")
+# TODO vaildate values.
 
 total_parts="$(ceil "${SIZE}" "${TUS_CHUNCK_SIZE}")"
 
