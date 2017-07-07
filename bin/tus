@@ -3,7 +3,7 @@ set -e
 
 : {TUSD:=''}
 : {TUS_HEADERS:=''}
-export TUS_CHUNCK_SIZE=${TUS_CHUNCK_SIZE:-1048576}
+export TUS_CHUNK_SIZE=${TUS_CHUNK_SIZE:-1048576}
 export TUS_PARALLEL=${TUS_PARALLEL:-1}
 
 # ==============================================================================
@@ -130,11 +130,11 @@ function tus_upload {
   while true; do local part=0; local finished=1
     while [ "${part}" -lt "${parts}" ]; do
       if ! tus_complete "${file}" "${dest}" "${part}"; then
-        local offset=$(( part * TUS_CHUNCK_SIZE ))
-        local file_offset=$(( (multi - 1) * parts * TUS_CHUNCK_SIZE ))
+        local offset=$(( part * TUS_CHUNK_SIZE ))
+        local file_offset=$(( (multi - 1) * parts * TUS_CHUNK_SIZE ))
         local length=$(( size - file_offset - offset ))
-        [ ${length} -gt "${TUS_CHUNCK_SIZE}" ] \
-          && length="${TUS_CHUNCK_SIZE}"
+        [ ${length} -gt "${TUS_CHUNK_SIZE}" ] \
+          && length="${TUS_CHUNK_SIZE}"
 
         echo -e "\033[0;32m🠹\033[0m Upload [\e[1;${color}m${dest}\e[0m] \033[1mpart ${part}\033[21m."
         eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
@@ -234,7 +234,7 @@ do
     c)
       [ -z "${OPTARG}" ] || echo "${OPTARG}" | grep -vq '^[[:digit:]]*$' \
         && usage
-      TUS_CHUNCK_SIZE=$((OPTARG * 1048576))
+      TUS_CHUNK_SIZE=$((OPTARG * 1048576))
     ;;
     p)
       echo "${OPTARG}" | grep -vq '^[[:digit:]]*$' \
@@ -277,10 +277,10 @@ SIZE="$(wc -c <"${FILE}")"
 
 declare -A Location
 [ -f "${FILE}.tus" ] \
-  && . <(cat "${FILE}.tus" | grep -E '^(TUSD|TUS_HEADERS|TUS_CHUNCK_SIZE|TUS_PARALLEL|Location)')
+  && . <(cat "${FILE}.tus" | grep -E '^(TUSD|TUS_HEADERS|TUS_CHUNK_SIZE|TUS_PARALLEL|Location)')
 # TODO vaildate values.
 
-total_parts="$(ceil "${SIZE}" "${TUS_CHUNCK_SIZE}")"
+total_parts="$(ceil "${SIZE}" "${TUS_CHUNK_SIZE}")"
 
 if [ -z "${Location[@]}" ]; then
   headers=()
@@ -292,9 +292,9 @@ if [ -z "${Location[@]}" ]; then
     partials="${parts_per_partial}"
     if [ "${i}" -eq "${TUS_PARALLEL}" ]; then
       partials=$(( partials + total_parts - i * parts_per_partial ))
-      length=$(( SIZE - ( TUS_PARALLEL - 1 ) * parts_per_partial * TUS_CHUNCK_SIZE ))
+      length=$(( SIZE - ( TUS_PARALLEL - 1 ) * parts_per_partial * TUS_CHUNK_SIZE ))
     else
-      length=$(( partials * TUS_CHUNCK_SIZE ))
+      length=$(( partials * TUS_CHUNK_SIZE ))
     fi
 
     tus_create "${FILE}" "${length}" "${headers[@]}" || error 'Tus file creation failed'
@@ -307,7 +307,7 @@ if [ -z "${Location[@]}" ]; then
 # settings
 TUSD="${TUSD}"
 TUS_HEADERS="$(join ', ' "${TUS_HEADERS}")"
-TUS_CHUNCK_SIZE="${TUS_CHUNCK_SIZE}"
+TUS_CHUNK_SIZE="${TUS_CHUNK_SIZE}"
 TUS_PARALLEL="${TUS_PARALLEL}"
 # tus parts
 $(declare -p Location)
