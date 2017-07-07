@@ -1,8 +1,15 @@
-<img alt="Tus logo" src="https://github.com/fentas/tus-shell-client/blob/master/tus-shell-client.png?raw=true" width="30%" align="right" />
-
 # tus-shell-client
 
-> A pure shell client for the tus resumable upload protocol.
+<img alt="Tus logo" src="https://github.com/fentas/tus-shell-client/blob/master/tus-shell-client.png?raw=true" width="30%" align="right" />
+
+
+> [**tus**](https://tus.io/) is a protocol based on HTTP for *resumable file uploads*. Resumable
+> means that an upload can be interrupted at any moment and can be resumed without
+> re-uploading the previous data again. An interruption may happen willingly, if
+> the user wants to pause, or by accident in case of an network issue or server
+> outage.
+
+`tus-shell-client` is a pure shell client implementation for the tus resumable upload protocol.
 
 ## Install
 ```sh
