@@ -46,7 +46,7 @@ You can set options as environment variables.
 export TUS_HEADERS="Authorization: token,Other-Header: value"
 ```
 **equals:** `-H "Authorization: token" -H "Other-Header: value"`.
-- `TUS_CHUNCK_SIZE` in MegaBytes _(Option: `-c`)_
+- `TUS_CHUNK_SIZE` in MegaBytes _(Option: `-c`)_
 - `TUS_PARALLEL` _(Option: `-p`)_
 
 ## TODOS `Tus-Extension`
