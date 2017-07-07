@@ -224,7 +224,7 @@ readarray -t TUS_OPTIONS <<<"$(tus_options)"
 
 IFS=',' read -r -a TUS_HEADERS <<< "${TUS_HEADERS}"
 OPT_RESET=0
-while getopts ohrc:p:H: opt
+while getopts ohrc:p:H:t: opt
 do
   case "${opt}" in
     t)

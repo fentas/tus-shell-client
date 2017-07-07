@@ -13,7 +13,7 @@
 
 ## Install
 ```sh
-wget https://raw.githubusercontent.com/fentas/tus-shell-client/bin/tus -O /usr/local/bin/tus
+wget -O /usr/local/bin/tus "https://github.com/fentas/tus-shell-client/blob/master/bin/tus?raw=true"
 chmod +x /usr/local/bin/tus
 ```
 
