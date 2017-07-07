@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+
+: {TUSD:=''}
+: {TUS_HEADERS:=''}
+export TUS_CHUNCK_SIZE=${TUS_CHUNCK_SIZE:-1048576}
+export TUS_PARALLEL=${TUS_PARALLEL:-1}
+
+# ==============================================================================
+# debugging & usage & tus-helper
+function error { local message="${1}"; local env="${2}";
+  [ -n "${2}" ] && message="Missing ${1}. Please execute:\n"
+
+  echo -e "\033[1;31m➤\033[0m ${message}"
+  [ -n "${env}" ] \
+    && echo -e "\033[1;34mexport\033[0m ${env}=\"\033[1;31m<<${1}>>\033[0m\""
+  exit 1
+}
+
+function warning { local message="${1}"
+  echo -e "\033[0;33m➤\033[0m ${message}"
+}
+
+function usage { local message="${1}";
+  [ -n "${message}" ] \
+    && echo -e "\033[0;31m➤\033[0m \033[1m${message}\033[21m"
+  cat <<-EOTXT
+
+Usage:
+  $(basename "$0") [options] file
+
+Options:
+  -t URI            [required] tusd endpoint.
+  -o                List tusd OPTIONS.
+  -c MEGABYTES      Read up to MEGABYTES bytes at a time.
+                    > default: 1
+  -p N              N parallel uploads.
+                    > default: 1
+  -H HEADER         Set additional header.
+  -r                Reuploads given file from beginning.
+  -h                Shows usage.
+
+EOTXT
+  echo -e "\033[2m➤ https://tus.io/protocols/resumable-upload.html\033[0m"
+  echo -e "\033[2m➤ https://github.com/fentas/tus-shell-client\033[0m"
+  [ -z "${message}" ] && exit 0 || exit 1
+}
+
+# ==============================================================================
+# helper
+function ceil { local dividend="${1}"; local divisor="${2}"
+  [ $(( dividend % divisor )) -gt 0 ] \
+    && echo $(( ( ( $dividend - ( $dividend % $divisor ) ) / $divisor ) + 1 )) \
+    || echo $(( $dividend / $divisor ))
+}
+
+function expand { local prefix="${1}"; shift; for entry in "${@}"; do
+  [ ! -z "$entry" ] && echo -e "$prefix \"$entry\"";
+done; }
+
+function strip-domain { for entry in "${@}"; do
+  [ ! -z "$entry" ] && echo -n "${entry} " | sed -E 's|^https?://[^/]+(.*)|\1|';
+done; }
+
+function join { local IFS="$1"; shift
+  echo "$*";
+}
+
+# ==============================================================================
+# tus
+tus_location=$(mktemp -u)
+mkfifo $tus_location
+
+function tus_options {
+  # The Client SHOULD NOT include the Tus-Resumable header in the request and the Server MUST ignore the header.
+  eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
+  curl -s \
+    "${tus_headers[@]}" \
+    --head \
+    --request OPTIONS \
+    ${TUSD} | grep 'Tus-' | tr -d '\015'
+}
+
+function tus_supports {
+  echo "${TUS_OPTIONS[@]}" | grep -qE "^Tus-Extension:.*[, ]${1}[,$]" \
+    || error "${2}.\n\033[2m↳ See tusd options: \033[1;34m${0} -h\033[0m"
+}
+
+function tus_create {
+  local file="${1}"; shift
+  local size="${1}"; shift
+  local name=$(basename "${FILE}" | base64)
+
+  eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
+  for header in "${@}"; do
+    tus_headers+=(-H "${header}")
+  done
+
+  # Apparently 'Location: ..' is terminated by CRLF. grep and awk faithfully
+  # preserve the line ending, and the shell's $() substitution strips off the
+  # final LF leaving you with a string that just ends with a CR.
+  #
+  # When the CR is printed, the cursor moves to the beginning of the line and
+  # whatever gets printed next overwrites what was there.
+  # ... | tr -d '\015'
+  curl -s \
+    "${tus_headers[@]}" \
+    --head \
+    --request POST \
+    --header "Tus-Resumable: 1.0.0" \
+    --header "Content-Length: 0" \
+    --header "Upload-Length: ${size}" \
+    --header "Upload-Metadata: name ${name}" \
+    --header "Connection: close" \
+    ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
+  return $?
+}
+
+function tus_upload {
+  local dest="${1}"
+  local file="${2}"
+  local size="${3}"
+  local parts="${4}"
+  local multi="${5}"
+  local color=$(( $RANDOM % 7 + 31 ))
+
+  # code=$(mktemp -u)
+  # mkfifo $code
+
+  while true; do local part=0; local finished=1
+    while [ "${part}" -lt "${parts}" ]; do
+      if ! tus_complete "${file}" "${dest}" "${part}"; then
+        local offset=$(( part * TUS_CHUNCK_SIZE ))
+        local file_offset=$(( (multi - 1) * parts * TUS_CHUNCK_SIZE ))
+        local length=$(( size - file_offset - offset ))
+        [ ${length} -gt "${TUS_CHUNCK_SIZE}" ] \
+          && length="${TUS_CHUNCK_SIZE}"
+
+        echo -e "\033[0;32m🠹\033[0m Upload [\e[1;${color}m${dest}\e[0m] \033[1mpart ${part}\033[21m."
+        eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
+        # TODO curl will throw (55: Broken pipe)
+        # >> tusd will break connection after 'Content-Length'
+        # >> ? curl: how to set content length to upload
+        code=$(curl -s \
+          "${tus_headers[@]}" \
+          --write-out "%{http_code}" \
+          --request PATCH \
+          --header "Tus-Resumable: 1.0.0" \
+          --header "Content-Type: application/offset+octet-stream" \
+          --header "Content-Length: ${length}" \
+          --header "Upload-Offset: ${offset}" \
+          --continue-at "$(( file_offset + offset ))" \
+          --upload-file "${file}" \
+          "${dest}")
+
+        finished=0
+        tus_complete "${file}" "${dest}" "${part}" "${code}"
+      fi
+      part=$((part + 1))
+    done
+
+    [ ${finished} -eq 1 ] && break
+  done
+}
+
+# TODO unhandled error codes
+# - 409: mismatched offset
+# - 423: file currently locked
+function tus_complete {
+  local file="${1}"
+  local dest="${2}"
+  local part="${3}"
+  local code="$(echo ${4} | grep -o '[[:digit:]]*$')"
+  local key="# 🠹 ${dest} [${part}]"
+
+  if [ -z "${code}" ]; then
+    # read
+    cat "${file}.tus" | grep -qF "${key}"
+    return $?
+  elif [ "${code}" -eq 204 ] || [ "${code}" -eq 100 ]; then
+    # TODO what to do with status_code 100 Continue?
+    # write
+    echo "${key} uploaded." >> "${FILE}.tus"
+  else
+    warning "\033[1m${part}\033[21m failed. Will retry.\n\033[2m↳ $(echo ${4} | tr -d '\n')\033[22m"
+  fi
+}
+
+function tus_concat {
+  local file="${1}"
+  local name=$(basename "${file}" | base64)
+
+  eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
+  curl -v \
+    "${tus_headers[@]}" \
+    --head \
+    --request POST \
+    --header "Tus-Resumable: 1.0.0" \
+    --header "Content-Length: 0" \
+    --header "Upload-Concat: final;$(strip-domain "${TUSD}" ${@})" \
+    --header "Upload-Metadata: name ${name}" \
+    --header "Connection: close" \
+    ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
+  echo $?
+}
+
+function tus_done {
+  local dest="${1}"
+  echo -e "\n\033[0;32m➤ All parts uploaded 🐈\033[0m"
+  [ -n "${dest}" ] && echo -e "\033[2m↳ ${dest}\033[22m"
+  exit 0
+}
+
+# ==============================================================================
+# main
+function cleanup {
+  rm $tus_location
+}
+trap cleanup EXIT
+
+# ==============================================================================
+# pre
+[ -z "${TUSD}" ] && error 'tusd endpoint' 'TUSD'
+readarray -t TUS_OPTIONS <<<"$(tus_options)"
+
+IFS=',' read -r -a TUS_HEADERS <<< "${TUS_HEADERS}"
+OPT_RESET=0
+while getopts ohrc:p:H: opt
+do
+  case "${opt}" in
+    t)
+      TUSD="${OPTARG}"
+    ;;
+    c)
+      [ -z "${OPTARG}" ] || echo "${OPTARG}" | grep -vq '^[[:digit:]]*$' \
+        && usage
+      TUS_CHUNCK_SIZE=$((OPTARG * 1048576))
+    ;;
+    p)
+      echo "${OPTARG}" | grep -vq '^[[:digit:]]*$' \
+        && usage
+      TUS_PARALLEL="${OPTARG}"
+
+      [ ${TUS_PARALLEL} -gt 1 ] \
+        && tus_supports "concatenation" "Tusd can not perform parallel uploads"
+    ;;
+    H)
+      TUS_HEADERS+=("${OPTARG}")
+    ;;
+    r)
+      OPT_RESET=1
+    ;;
+    o)
+      for opt in "${TUS_OPTIONS[@]}"; do
+        IFS=':' read -r -a header <<< "${opt}"
+        echo -e "\033[0;32m➤\033[0m ${header[0]}"
+        IFS=',' read -r -a values <<< "${header[1]}"
+        for value in "${values[@]}"; do
+          echo -e "\033[2m↳ $(echo "${value}" | xargs)\033[22m"
+        done
+      done
+      exit 0
+    ;;
+    ?) usage
+   esac
+done
+shift $((OPTIND - 1))
+
+tus_supports "creation" "Tusd can not perform file creation"
+
+[ ! -f "${1}" ] && usage 'No file given'
+FILE="${1}"
+SIZE="$(wc -c <"${FILE}")"
+
+[ "${OPT_RESET}" -eq 1 ] \
+  && rm "${FILE}.tus" &>/dev/null
+
+declare -A Location
+[ -f "${FILE}.tus" ] \
+  && . <(cat "${FILE}.tus" | grep -E '^(TUSD|TUS_HEADERS|TUS_CHUNCK_SIZE|TUS_PARALLEL|Location)')
+# [ "${TUS_PARALLEL}" -gt 1 ] \
+#   && TUS_HEADERS+=("Tus-Extension: concatenation")
+
+total_parts="$(ceil "${SIZE}" "${TUS_CHUNCK_SIZE}")"
+
+if [ -z "${Location[@]}" ]; then
+  headers=()
+  [ "${TUS_PARALLEL}" -gt 1 ] \
+    && headers+=("Upload-Concat: partial")
+
+  parts_per_partial=$((total_parts / TUS_PARALLEL))
+  for i in $(seq ${TUS_PARALLEL}); do
+    partials="${parts_per_partial}"
+    if [ "${i}" -eq "${TUS_PARALLEL}" ]; then
+      partials=$(( partials + total_parts - i * parts_per_partial ))
+      length=$(( SIZE - ( TUS_PARALLEL - 1 ) * parts_per_partial * TUS_CHUNCK_SIZE ))
+    else
+      length=$(( partials * TUS_CHUNCK_SIZE ))
+    fi
+
+    tus_create "${FILE}" "${length}" "${headers[@]}" || error 'Tus file creation failed'
+    read dest < $tus_location
+    Location[$dest]="${partials}-${i}"
+  done
+
+  # create resumable log file
+  cat <<-EOTUS > "${FILE}.tus"
+# settings
+TUSD="${TUSD}"
+TUS_HEADERS="$(join ', ' "${TUS_HEADERS}")"
+TUS_CHUNCK_SIZE="${TUS_CHUNCK_SIZE}"
+TUS_PARALLEL="${TUS_PARALLEL}"
+# tus parts
+$(declare -p Location)
+# ∑ ${total_parts} parts to upload.
+EOTUS
+fi
+
+echo -e "\033[0;35m∑\033[0m \033[1m${total_parts} parts\033[21m to upload."
+declare -A pids
+for dest in "${!Location[@]}"; do
+  __=(${Location[$dest]//-/ })
+  tus_upload "${dest}" "${FILE}" "${SIZE}" "${__[0]}" "${__[1]}" &
+  pids[$dest]=${!}
+done
+
+while [ ${#pids[@]} -gt 0 ]; do
+  for dest in "${!Location[@]}"; do
+    [ -e "/proc/${pids[$dest]}" ] && continue
+    unset pids[$dest]
+  done
+  sleep 1
+done
+
+if [ "${TUS_PARALLEL}" -gt 1 ]; then
+  tus_concat "${!Location[@]}" || error 'Tus concatenation failed'
+  read dest < $tus_location
+fi
+tus_done "${dest}"
