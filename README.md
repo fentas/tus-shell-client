@@ -59,3 +59,6 @@ export TUS_HEADERS="Authorization: token,Other-Header: value"
 ## Referrences
 - https://tus.io/blog/2015/11/16/tus.1.0
 - https://github.com/tus/tus.io/issues/96
+
+## License
+This project is licensed under the MIT license, see `LICENSE`.

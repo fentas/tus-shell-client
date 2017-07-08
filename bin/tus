@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -e
 
 : {TUSD:=''}
 : {TUS_HEADERS:=''}
