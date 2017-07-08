@@ -49,7 +49,8 @@ export TUS_HEADERS="Authorization: token,Other-Header: value"
 - `TUS_CHUNK_SIZE` in MegaBytes _(Option: `-c`)_
 - `TUS_PARALLEL` _(Option: `-p`)_
 
-## TODOS `Tus-Extension`
+## TODOS
+- [ ] kill child processes on SIGTERM
 - [ ] `Upload-Defer-Length`
 - [ ] `Upload-Expires`
 - [ ] `Tus-Checksum-Algorithm` and `Upload-Checksum`

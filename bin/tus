@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 : {TUSD:=''}
 : {TUS_HEADERS:=''}
@@ -82,7 +83,7 @@ function tus_options {
 
 function tus_supports {
   echo "${TUS_OPTIONS[@]}" | grep -qE "^Tus-Extension:.*[, ]${1}[,$]" \
-    || error "${2}.\n\033[2m↳ See tusd options: \033[1;34m${0} -h\033[0m"
+    || error "${2}.\n\033[2m↳ See tusd options: \033[1;34m${0} -o\033[0m"
 }
 
 function tus_create {
@@ -116,6 +117,8 @@ function tus_create {
 }
 
 function tus_upload {
+  # trap 'kill $(jobs -p)' SIGINT SIGTERM
+
   local dest="${1}"
   local file="${2}"
   local size="${3}"
@@ -123,8 +126,8 @@ function tus_upload {
   local multi="${5}"
   local color=$(( $RANDOM % 7 + 31 ))
 
-  # code=$(mktemp -u)
-  # mkfifo $code
+  response=$(mktemp -u)
+  mkfifo $response
 
   while true; do local part=0; local finished=1
     while [ "${part}" -lt "${parts}" ]; do
@@ -135,12 +138,14 @@ function tus_upload {
         [ ${length} -gt "${TUS_CHUNK_SIZE}" ] \
           && length="${TUS_CHUNK_SIZE}"
 
-        echo -e "\033[0;32m🠹\033[0m Upload [\e[1;${color}m${dest}\e[0m] \033[1mpart ${part}\033[21m."
+        echo -e "\033[0;32m🠹\033[0m Upload \033[1m\e[1;${color}mpart ${part}\e[0m\033[21m."
+        echo -e "\033[2m↳ ${dest}"
         eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
         # TODO curl will throw (55: Broken pipe)
         # >> tusd will break connection after 'Content-Length'
         # >> ? curl: how to set content length to upload
-        code=$(curl -s \
+
+        curl --progress-bar \
           "${tus_headers[@]}" \
           --write-out "%{http_code}" \
           --request PATCH \
@@ -148,18 +153,19 @@ function tus_upload {
           --header "Content-Type: application/offset+octet-stream" \
           --header "Content-Length: ${length}" \
           --header "Upload-Offset: ${offset}" \
-          --continue-at "$(( file_offset + offset ))" \
-          --upload-file "${file}" \
-          "${dest}")
+          --data-binary "@-" \
+          "${dest}" < <(dd if=${file} skip=$(( file_offset + offset )) count=${length} iflag=skip_bytes,count_bytes 2>/dev/null) 1> $response &
 
+        tus_complete "${file}" "${dest}" "${part}" "$(tee < $response)"
+        echo -ne "\033[22m"
         finished=0
-        tus_complete "${file}" "${dest}" "${part}" "${code}"
       fi
       part=$((part + 1))
     done
 
     [ ${finished} -eq 1 ] && break
   done
+  rm $response
 }
 
 # TODO unhandled error codes
@@ -212,18 +218,19 @@ function tus_done {
 
 # ==============================================================================
 # main
+declare -A pids
+
 function cleanup {
   rm $tus_location
+  # kill "${pids[@]}"
 }
 trap cleanup EXIT
 
 # ==============================================================================
 # pre
-[ -z "${TUSD}" ] && error 'tusd endpoint' 'TUSD'
-readarray -t TUS_OPTIONS <<<"$(tus_options)"
-
 IFS=',' read -r -a TUS_HEADERS <<< "${TUS_HEADERS}"
 OPT_RESET=0
+OPT_OPTIONS=0
 while getopts ohrc:p:H:t: opt
 do
   case "${opt}" in
@@ -250,20 +257,26 @@ do
       OPT_RESET=1
     ;;
     o)
-      for opt in "${TUS_OPTIONS[@]}"; do
-        IFS=':' read -r -a header <<< "${opt}"
-        echo -e "\033[0;32m➤\033[0m ${header[0]}"
-        IFS=',' read -r -a values <<< "${header[1]}"
-        for value in "${values[@]}"; do
-          echo -e "\033[2m↳ $(echo "${value}" | xargs)\033[22m"
-        done
-      done
-      exit 0
+      OPT_OPTIONS=1
     ;;
     ?) usage
    esac
 done
 shift $((OPTIND - 1))
+
+[ -z "${TUSD}" ] && error 'tusd endpoint' 'TUSD'
+readarray -t TUS_OPTIONS <<<"$(tus_options)"
+if [ "${OPT_OPTIONS}" -eq 1 ]; then
+  for opt in "${TUS_OPTIONS[@]}"; do
+    IFS=':' read -r -a header <<< "${opt}"
+    echo -e "\033[0;32m➤\033[0m ${header[0]}"
+    IFS=',' read -r -a values <<< "${header[1]}"
+    for value in "${values[@]}"; do
+      echo -e "\033[2m↳ $(echo "${value}" | xargs)\033[22m"
+    done
+  done
+  exit 0
+fi
 
 tus_supports "creation" "Tusd can not perform file creation"
 
@@ -315,7 +328,6 @@ EOTUS
 fi
 
 echo -e "\033[0;35m∑\033[0m \033[1m${total_parts} parts\033[21m to upload."
-declare -A pids
 for dest in "${!Location[@]}"; do
   __=(${Location[$dest]//-/ })
   tus_upload "${dest}" "${FILE}" "${SIZE}" "${__[0]}" "${__[1]}" &
