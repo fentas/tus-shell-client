@@ -37,9 +37,9 @@ Options:
 ➤ https://github.com/fentas/tus-shell-client
 
 ```
-
+---
 <p align="center">
-  <img alt="Tus usage" src="https://github.com/fentas/tus-shell-client/blob/assets/tus-shell-client.gif?raw=true" width="80%" />
+  <img alt="Tus usage" src="https://github.com/fentas/tus-shell-client/blob/assets/tus-shell-client.gif?raw=true" width="60%" />
 </p>
 
 ## Environment variables
