@@ -54,16 +54,18 @@ export TUS_HEADERS="Authorization: token,Other-Header: value"
 - `TUS_PARALLEL` _(Option: `-p`)_
 
 ## TODOS
-- [ ] kill child processes on SIGTERM
-- [ ] `Upload-Defer-Length`
-- [ ] `Upload-Expires`
-- [ ] `Tus-Checksum-Algorithm` and `Upload-Checksum`
-- [ ] `DELETE`
-- [ ] Test `Upload-Concat`.
+- [ ] :rotating_light: test cases with https://github.com/sstephenson/bats ?
+- [ ] :construction: kill child processes on SIGTERM
+- [ ] :sparkles: `Upload-Defer-Length`
+- [ ] :sparkles: `Upload-Expires`
+- [ ] :sparkles: `Tus-Checksum-Algorithm` and `Upload-Checksum`
+- [ ] :sparkles: `DELETE`
+- [ ] :wrench: Test `Upload-Concat`.
 
 ## Referrences
-- https://tus.io/blog/2015/11/16/tus.1.0
+- https://tus.io/protocols/resumable-upload.html
 - https://github.com/tus/tus.io/issues/96
+- https://github.com/sstephenson/bats
 
 ## License
 This project is licensed under the MIT license, see `LICENSE`.
