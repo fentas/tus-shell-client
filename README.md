@@ -1,6 +1,6 @@
 # tus-shell-client
 
-<img alt="Tus logo" src="https://github.com/fentas/tus-shell-client/blob/master/tus-shell-client.png?raw=true" width="30%" align="right" />
+<img alt="Tus logo" src="https://github.com/fentas/tus-shell-client/blob/assets/tus-shell-client.png?raw=true" width="30%" align="right" />
 
 
 > [**tus**](https://tus.io/) is a protocol based on HTTP for *resumable file uploads*. Resumable
@@ -37,6 +37,10 @@ Options:
 ➤ https://github.com/fentas/tus-shell-client
 
 ```
+
+<p align="center">
+  <img alt="Tus usage" src="https://github.com/fentas/tus-shell-client/blob/assets/tus-shell-client.gif?raw=true" width="80%" />
+</p>
 
 ## Environment variables
 You can set options as environment variables.
