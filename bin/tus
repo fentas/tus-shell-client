@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-: {TUSD:=''}
-: {TUS_HEADERS:=''}
+: ${TUSD:=""}
+: ${TUS_HEADERS:=''}
 export TUS_CHUNK_SIZE=${TUS_CHUNK_SIZE:-1048576}
 export TUS_PARALLEL=${TUS_PARALLEL:-1}
 
@@ -89,7 +89,6 @@ function tus_supports {
 function tus_create {
   local file="${1}"; shift
   local size="${1}"; shift
-  local name=$(basename "${FILE}" | base64)
 
   eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
   for header in "${@}"; do
@@ -110,7 +109,7 @@ function tus_create {
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
     --header "Upload-Length: ${size}" \
-    --header "Upload-Metadata: name ${name}" \
+    --header "Upload-Metadata: name $(basename "${file}" | base64)" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
   return $?
@@ -175,8 +174,8 @@ function tus_complete {
   local file="${1}"
   local dest="${2}"
   local part="${3}"
-  local code="$(echo ${4} | grep -o '[[:digit:]]*$')"
-  local key="# 🠹 ${dest} [${part}]"
+  local -r code="$(echo ${4} | grep -o '[[:digit:]]*$')"
+  local -r key="# 🠹 ${dest} [${part}]"
 
   if [ -z "${code}" ]; then
     # read
@@ -193,7 +192,6 @@ function tus_complete {
 
 function tus_concat {
   local file="${1}"
-  local name=$(basename "${file}" | base64)
 
   eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
   curl -v \
@@ -202,8 +200,8 @@ function tus_concat {
     --request POST \
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
-    --header "Upload-Concat: final;$(strip-domain "${TUSD}" ${@})" \
-    --header "Upload-Metadata: name ${name}" \
+    --header "Upload-Concat: final;$(strip-domain "${TUSD}" "${@}")" \
+    --header "Upload-Metadata: name $(basename "${file}" | base64)" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
   echo $?
@@ -288,6 +286,7 @@ SIZE="$(wc -c <"${FILE}")"
   && rm "${FILE}.tus" &>/dev/null
 
 declare -A Location
+# shellcheck source=/dev/null
 [ -f "${FILE}.tus" ] \
   && . <(cat "${FILE}.tus" | grep -E '^(TUSD|TUS_HEADERS|TUS_CHUNK_SIZE|TUS_PARALLEL|Location)')
 # TODO vaildate values.
@@ -318,7 +317,7 @@ if [ -z "${Location[@]}" ]; then
   cat <<-EOTUS > "${FILE}.tus"
 # settings
 TUSD="${TUSD}"
-TUS_HEADERS="$(join ', ' "${TUS_HEADERS}")"
+TUS_HEADERS="$(join ', ' "${TUS_HEADERS[@]}")"
 TUS_CHUNK_SIZE="${TUS_CHUNK_SIZE}"
 TUS_PARALLEL="${TUS_PARALLEL}"
 # tus parts

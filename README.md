@@ -1,4 +1,4 @@
-# tus-shell-client
+# tus-shell-client  [![Build Status](https://travis-ci.org/fentas/tus-shell-client.svg?branch=master)](https://travis-ci.org/fentas/tus-shell-client)
 
 <img alt="Tus logo" src="https://github.com/fentas/tus-shell-client/blob/assets/tus-shell-client.png?raw=true" width="30%" align="right" />
 
