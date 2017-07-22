@@ -265,7 +265,7 @@ shift $((OPTIND - 1))
 [ -z "${TUSD}" ] && error 'tusd endpoint' 'TUSD'
 readarray -t TUS_OPTIONS <<<"$(tus_options)"
 if [ "${OPT_OPTIONS}" -eq 1 ]; then
-  echo -e "\033[1;34m☁\033[0m ${TUSD}\n\033[2m⌄\033[22m"
+  echo -e "\033[1;34m➤ ${TUSD} ☁\033[0m\n\033[2m⌄\033[22m"
   if [ -z "${TUS_OPTIONS[*]}" ]; then
     error "No tusd headers"
   else for opt in "${TUS_OPTIONS[@]}"; do
