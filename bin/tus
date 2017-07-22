@@ -265,14 +265,17 @@ shift $((OPTIND - 1))
 [ -z "${TUSD}" ] && error 'tusd endpoint' 'TUSD'
 readarray -t TUS_OPTIONS <<<"$(tus_options)"
 if [ "${OPT_OPTIONS}" -eq 1 ]; then
-  for opt in "${TUS_OPTIONS[@]}"; do
+  echo -e "\033[1;34m☁\033[0m ${TUSD}\n\033[2m⌄\033[22m"
+  if [ -z "${TUS_OPTIONS[*]}" ]; then
+    error "No tusd headers"
+  else for opt in "${TUS_OPTIONS[@]}"; do
     IFS=':' read -r -a header <<< "${opt}"
     echo -e "\033[0;32m➤\033[0m ${header[0]}"
     IFS=',' read -r -a values <<< "${header[1]}"
     for value in "${values[@]}"; do
       echo -e "\033[2m↳ $(echo "${value}" | xargs)\033[22m"
     done
-  done
+  done; fi
   exit 0
 fi
 
