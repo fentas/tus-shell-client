@@ -109,7 +109,7 @@ function tus_create {
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
     --header "Upload-Length: ${size}" \
-    --header "Upload-Metadata: name $(basename "${file}" | base64)" \
+    --header "Upload-Metadata: name $(basename "${file}" | tr -d '\n' | base64)" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
   return $?
@@ -201,7 +201,7 @@ function tus_concat {
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
     --header "Upload-Concat: final;$(strip-domain "${TUSD}" "${@}")" \
-    --header "Upload-Metadata: name $(basename "${file}" | base64)" \
+    --header "Upload-Metadata: name $(basename "${file}" | tr -d '\n' | base64)" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
   echo $?
@@ -286,7 +286,7 @@ FILE="${1}"
 SIZE="$(wc -c <"${FILE}")"
 
 [ "${OPT_RESET}" -eq 1 ] \
-  && rm "${FILE}.tus" &>/dev/null
+  && rm "${FILE}.tus" &>/dev/null || true
 
 declare -A Location
 # shellcheck source=/dev/null
