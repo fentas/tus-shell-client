@@ -3,6 +3,7 @@ set -e
 
 : ${TUSD:=""}
 : ${TUS_HEADERS:=''}
+: ${TUS_METADATA:=''}
 export TUS_CHUNK_SIZE=${TUS_CHUNK_SIZE:-1048576}
 export TUS_PARALLEL=${TUS_PARALLEL:-1}
 
@@ -38,6 +39,11 @@ Options:
                     > default: 1
   -H HEADER         Set additional header.
   -r                Reuploads given file from the beginning.
+  -n                Add the filename to the Upload-Metadata.
+  -m                Append Upload-Metadata key-value pairs. Values 
+                    must be in form of "key base64value,key base64value". 
+                    Values can be omitted for a key. Values MUST 
+                    be base64 encoded.
   -h                Shows usage.
 
 EOTXT
@@ -94,6 +100,12 @@ function tus_create {
   for header in "${@}"; do
     tus_headers+=(-H "${header}")
   done
+  
+  #append the filename to metadata if requested
+  if [ ${METADATA_NAME} -eq 1 ]
+  then
+	TUS_METADATA+=",name $(basename "${file}" | tr -d '\n' | base64)"
+  fi
 
   # Apparently 'Location: ..' is terminated by CRLF. grep and awk faithfully
   # preserve the line ending, and the shell's $() substitution strips off the
@@ -109,7 +121,7 @@ function tus_create {
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
     --header "Upload-Length: ${size}" \
-    --header "Upload-Metadata: name $(basename "${file}" | tr -d '\n' | base64)" \
+    --header "Upload-Metadata: ${TUS_METADATA}" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
   return $?
@@ -170,6 +182,7 @@ function tus_upload {
 # TODO unhandled error codes
 # - 409: mismatched offset
 # - 423: file currently locked
+# - 500: server error
 function tus_complete {
   local file="${1}"
   local dest="${2}"
@@ -201,7 +214,7 @@ function tus_concat {
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
     --header "Upload-Concat: final;$(strip-domain "${TUSD}" "${@}")" \
-    --header "Upload-Metadata: name $(basename "${file}" | tr -d '\n' | base64)" \
+    --header "Upload-Metadata: ${TUS_METADATA}" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
   echo $?
@@ -229,12 +242,19 @@ trap cleanup EXIT
 IFS=',' read -r -a TUS_HEADERS <<< "${TUS_HEADERS}"
 OPT_RESET=0
 OPT_OPTIONS=0
-while getopts ohrc:p:H:t: opt
+METADATA_NAME=0
+while getopts ohrnc:p:H:t:m: opt
 do
   case "${opt}" in
     t)
       TUSD="${OPTARG}"
     ;;
+	m)
+	  TUS_METADATA+="${OPTARG}"
+	;;
+	n)
+	  METADATA_NAME=1
+	;;
     c)
       [ -z "${OPTARG}" ] || echo "${OPTARG}" | grep -vq '^[[:digit:]]*$' \
         && usage
