@@ -31,6 +31,11 @@ Options:
                     > default: 1
   -H HEADER         Set additional header.
   -r                Reuploads given file from the beginning.
+  -n                Add the filename to the Upload-Metadata.
+  -m                Append Upload-Metadata key-value pairs. Values
+                    must be in form of "key base64value,key base64value".
+                    Values can be omitted for a key. Values MUST
+                    be base64 encoded.
   -h                Shows usage.
 
 ➤ https://tus.io/protocols/resumable-upload.html
