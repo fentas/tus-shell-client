@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 2026-10-28 19:55:54
 set -e
 
 : ${TUSD:=""}
@@ -66,6 +67,28 @@ function join { local IFS="$1"; shift
   echo "$*";
 }
 
+function resolve_tus_location {
+  local location="${1}"
+
+  case "${location}" in
+    http://*|https://*)
+      echo "${location}"
+      ;;
+    '')
+      echo ""
+      ;;
+    *)
+      if [ -n "${TUS_BASE_URL}" ] && [ "${location:0:1}" = "/" ]; then
+        echo "${TUS_BASE_URL}${location}"
+      elif [ -n "${TUS_BASE_URL}" ]; then
+        echo "${TUS_BASE_URL%/}/${location#/}"
+      else
+        echo "${location}"
+      fi
+      ;;
+  esac
+}
+
 # ==============================================================================
 # tus
 tus_location=$(mktemp -u)
@@ -82,7 +105,9 @@ function tus_options {
 }
 
 function tus_supports {
-  echo "${TUS_OPTIONS[@]}" | grep -qE "^Tus-Extension:.*[, ]${1}[,$]" \
+  echo "${TUS_OPTIONS[@]}" \
+    | tr -d '\r' \
+    | grep -qE "^Tus-Extension:.*[, ]${1}" \
     || error "${2}.\n\033[2m↳ See tusd options: \033[1;34m${0} -o\033[0m"
 }
 
@@ -123,6 +148,7 @@ function tus_upload {
   local size="${3}"
   local parts="${4}"
   local multi="${5}"
+  local start_parts="${6:-$(( (multi - 1) * parts ))}"
   local color=$(( $RANDOM % 7 + 31 ))
 
   response=$(mktemp -u)
@@ -132,7 +158,7 @@ function tus_upload {
     while [ "${part}" -lt "${parts}" ]; do
       if ! tus_complete "${file}" "${dest}" "${part}"; then
         local offset=$(( part * TUS_CHUNK_SIZE ))
-        local file_offset=$(( (multi - 1) * parts * TUS_CHUNK_SIZE ))
+        local file_offset=$(( start_parts * TUS_CHUNK_SIZE ))
         local length=$(( size - file_offset - offset ))
         [ ${length} -gt "${TUS_CHUNK_SIZE}" ] \
           && length="${TUS_CHUNK_SIZE}"
@@ -192,19 +218,43 @@ function tus_complete {
 
 function tus_concat {
   local file="${1}"
+  shift
+
+  local -a ordered_partials=()
+  local -a indexed_partials=()
+  local dest parts multi start_parts key
+
+  for dest in "${@}"; do
+    IFS='-' read -r parts multi start_parts <<< "${Location[$dest]}"
+    [ -z "${start_parts}" ] && start_parts=$(( (multi - 1) * parts ))
+    printf -v key '%08d|%s' "${start_parts}" "${dest}"
+    indexed_partials+=("${key}")
+  done
+
+  if [ ${#indexed_partials[@]} -gt 0 ]; then
+    while IFS='|' read -r _ dest; do
+      ordered_partials+=("${dest}")
+    done < <(printf '%s\n' "${indexed_partials[@]}" | sort -t'|' -k1,1n)
+  fi
+
+  local concat_value=""
+  for dest in "${ordered_partials[@]}"; do
+    local partial_path
+    partial_path="$(strip-domain "${dest}" | xargs)"
+    concat_value="${concat_value:+${concat_value} }${partial_path}"
+  done
 
   eval "local tus_headers=($(expand '-H' "${TUS_HEADERS[@]}"))"
-  curl -v \
+  curl -s \
     "${tus_headers[@]}" \
     --head \
     --request POST \
     --header "Tus-Resumable: 1.0.0" \
     --header "Content-Length: 0" \
-    --header "Upload-Concat: final;$(strip-domain "${TUSD}" "${@}")" \
+    --header "Upload-Concat: final;${concat_value}" \
     --header "Upload-Metadata: name $(basename "${file}" | tr -d '\n' | base64)" \
     --header "Connection: close" \
     ${TUSD} | grep 'Location:' | awk '{print $2}' | tr -d '\015' 1> $tus_location 2>&1 &
-  echo $?
 }
 
 function tus_done {
@@ -244,9 +294,6 @@ do
       echo "${OPTARG}" | grep -vq '^[[:digit:]]*$' \
         && usage
       TUS_PARALLEL="${OPTARG}"
-
-      [ ${TUS_PARALLEL} -gt 1 ] \
-        && tus_supports "concatenation" "Tusd can not perform parallel uploads"
     ;;
     H)
       TUS_HEADERS+=("${OPTARG}")
@@ -263,7 +310,11 @@ done
 shift $((OPTIND - 1))
 
 [ -z "${TUSD}" ] && error 'tusd endpoint' 'TUSD'
+TUS_BASE_URL="$(printf '%s' "${TUSD}" | sed -E 's#^([a-z]+://[^/]+).*#\1#')"
 readarray -t TUS_OPTIONS <<<"$(tus_options)"
+[ ${TUS_PARALLEL} -gt 1 ] \
+  && tus_supports "concatenation" "Tusd can not perform parallel uploads"
+
 if [ "${OPT_OPTIONS}" -eq 1 ]; then
   echo -e "\033[1;34m➤ ${TUSD} ☁\033[0m\n\033[2m⌄\033[22m"
   if [ -z "${TUS_OPTIONS[*]}" ]; then
@@ -302,18 +353,26 @@ if [ -z "${Location[@]}" ]; then
     && headers+=("Upload-Concat: partial")
 
   parts_per_partial=$((total_parts / TUS_PARALLEL))
+  remainder_parts=$((total_parts % TUS_PARALLEL))
+  start_parts=0
+  start_offset=0
   for i in $(seq ${TUS_PARALLEL}); do
     partials="${parts_per_partial}"
-    if [ "${i}" -eq "${TUS_PARALLEL}" ]; then
-      partials=$(( partials + total_parts - i * parts_per_partial ))
-      length=$(( SIZE - ( TUS_PARALLEL - 1 ) * parts_per_partial * TUS_CHUNK_SIZE ))
-    else
-      length=$(( partials * TUS_CHUNK_SIZE ))
+    if [ "${i}" -le "${remainder_parts}" ]; then
+      partials=$(( partials + 1 ))
     fi
+    [ "${partials}" -eq 0 ] && continue
+
+    length=$(( partials * TUS_CHUNK_SIZE ))
+    remaining_bytes=$(( SIZE - start_offset ))
+    [ "${length}" -gt "${remaining_bytes}" ] && length="${remaining_bytes}"
 
     tus_create "${FILE}" "${length}" "${headers[@]}" || error 'Tus file creation failed'
     read dest < $tus_location
-    Location[$dest]="${partials}-${i}"
+    dest="$(resolve_tus_location "${dest}")"
+    Location[$dest]="${partials}-${i}-${start_parts}"
+    start_parts=$(( start_parts + partials ))
+    start_offset=$(( start_offset + length ))
   done
 
   # create resumable log file
@@ -331,8 +390,9 @@ fi
 
 echo -e "\033[0;35m∑\033[0m \033[1m${total_parts} parts\033[21m to upload."
 for dest in "${!Location[@]}"; do
-  __=(${Location[$dest]//-/ })
-  tus_upload "${dest}" "${FILE}" "${SIZE}" "${__[0]}" "${__[1]}" &
+  IFS='-' read -r parts multi start_parts <<< "${Location[$dest]}"
+  [ -z "${start_parts}" ] && start_parts=$(( (multi - 1) * parts ))
+  tus_upload "${dest}" "${FILE}" "${SIZE}" "${parts}" "${multi}" "${start_parts}" &
   pids[$dest]=${!}
 done
 
@@ -345,7 +405,8 @@ while [ ${#pids[@]} -gt 0 ]; do
 done
 
 if [ "${TUS_PARALLEL}" -gt 1 ]; then
-  tus_concat "${!Location[@]}" || error 'Tus concatenation failed'
+  tus_concat "${FILE}" "${!Location[@]}" || error 'Tus concatenation failed'
   read dest < $tus_location
+  dest="$(resolve_tus_location "${dest}")"
 fi
 tus_done "${dest}"
